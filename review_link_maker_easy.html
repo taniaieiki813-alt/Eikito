@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>口コミリンク作成</title>
+<style>
+*{box-sizing:border-box} body{margin:0;background:#f4f6f8;color:#202124;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
+main{max-width:620px;margin:auto;padding:18px 16px 50px}.card{background:#fff;border-radius:22px;padding:20px;box-shadow:0 3px 18px #00000010}
+h1{font-size:25px;margin:0 0 5px}.sub{font-size:14px;color:#6b7280;margin-bottom:18px}
+input,button{width:100%;border-radius:14px;font-size:17px;padding:15px;margin-top:10px}
+input{border:1px solid #d7dce2;background:#fff}button{border:0;background:#1a73e8;color:#fff;font-weight:750;cursor:pointer}
+button.alt{background:#eef3fd;color:#1558b0}.small{font-size:13px;color:#6b7280;margin-top:8px}
+#status{font-size:14px;margin:14px 2px;color:#444}.result{border:1px solid #e4e7eb;border-radius:14px;padding:13px;margin-top:10px;cursor:pointer}
+.result:active{background:#f3f6fa}.name{font-weight:750}.addr{font-size:13px;color:#6b7280;margin-top:4px}
+.hidden{display:none}#selected{margin-top:18px;padding-top:16px;border-top:1px solid #eee}
+.url{background:#f7f8fa;border-radius:10px;padding:10px;font-size:12px;word-break:break-all;margin:8px 0}
+.settings{margin-top:18px}.settings summary{color:#6b7280;font-size:14px;cursor:pointer}
+.ok{color:#137333!important}.err{color:#b3261e!important}
+</style>
+</head>
+<body><main><div class="card">
+<h1>⭐ 口コミリンク作成</h1>
+<div class="sub">店名を検索するだけ。NFCカード用のGoogle口コミリンクを作成します。</div>
+
+<input id="q" autocomplete="off" placeholder="店名を入力  例：Midtown BBQ Tokyo">
+<button id="go">お店を検索</button>
+<div id="status"></div>
+<div id="results"></div>
+
+<section id="selected" class="hidden">
+<div class="small">選択した店舗</div><div id="selectedName" class="name"></div>
+<div id="url" class="url"></div>
+<button id="copy">📋 口コミURLをコピー</button>
+<button id="test" class="alt">⭐ 口コミ画面を開いて確認</button>
+</section>
+
+<details class="settings">
+<summary>⚙️ APIキー設定</summary>
+<input id="key" type="password" autocomplete="off" placeholder="Google Maps APIキー">
+<button id="save" class="alt">APIキーをこの端末に保存</button>
+<div class="small">このファイル内にはAPIキーを埋め込んでいません。入力したキーはこのブラウザの端末内ストレージに保存されます。</div>
+</details>
+</div></main>
+<script>
+const $=x=>document.getElementById(x);
+const saved=localStorage.getItem("review_places_key")||"";
+$("key").value=saved;
+if(!saved){$("status").textContent="最初に下の「APIキー設定」を開いて、APIキーを1回だけ保存してください。"}
+
+$("save").onclick=()=>{
+ const k=$("key").value.trim();
+ if(!k)return;
+ localStorage.setItem("review_places_key",k);
+ $("status").className="ok"; $("status").textContent="APIキーを保存しました。次回から入力不要です ✓";
+};
+$("q").addEventListener("keydown",e=>{if(e.key==="Enter")$("go").click()});
+$("go").onclick=async()=>{
+ const key=localStorage.getItem("review_places_key")||$("key").value.trim();
+ const text=$("q").value.trim();
+ $("results").innerHTML=""; $("selected").classList.add("hidden"); $("status").className="";
+ if(!key){$("status").className="err";$("status").textContent="先にAPIキーを保存してください。";return}
+ if(!text){$("status").textContent="店名を入力してください。";return}
+ $("status").textContent="検索中…";
+ try{
+  const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
+   method:"POST",
+   headers:{"Content-Type":"application/json","X-Goog-Api-Key":key,
+   "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress"},
+   body:JSON.stringify({textQuery:text,languageCode:"ja"})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error(d?.error?.message||("HTTP "+r.status));
+  const ps=d.places||[];
+  $("status").textContent=ps.length?`${ps.length}件見つかりました。店舗を選んでください。`:"見つかりませんでした。地域名も一緒に入力してみてください。";
+  ps.forEach(p=>{
+   const el=document.createElement("div"); el.className="result";
+   const n=document.createElement("div"); n.className="name"; n.textContent=p.displayName?.text||"名称不明";
+   const a=document.createElement("div"); a.className="addr"; a.textContent=p.formattedAddress||"";
+   el.append(n,a); el.onclick=()=>choose(p); $("results").appendChild(el);
+  });
+ }catch(e){$("status").className="err";$("status").textContent="検索エラー："+e.message}
+};
+function choose(p){
+ const u="https://search.google.com/local/writereview?placeid="+encodeURIComponent(p.id);
+ $("selectedName").textContent=p.displayName?.text||"";
+ $("url").textContent=u; $("selected").classList.remove("hidden");
+ $("selected").scrollIntoView({behavior:"smooth"});
+}
+$("copy").onclick=async()=>{
+ try{await navigator.clipboard.writeText($("url").textContent)}
+ catch{const t=document.createElement("textarea");t.value=$("url").textContent;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove()}
+ $("copy").textContent="✓ コピーしました";
+ setTimeout(()=>$("copy").textContent="📋 口コミURLをコピー",1600);
+};
+$("test").onclick=()=>window.open($("url").textContent,"_blank");
+</script></body></html>
